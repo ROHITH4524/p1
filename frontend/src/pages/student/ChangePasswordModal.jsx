@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import api from '../../api/axios';
+import { AuthContext } from '../../context/AuthContext';
 
 const ChangePasswordModal = ({ isOpen, onClose }) => {
+    const { user } = useContext(AuthContext);
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -20,13 +22,17 @@ const ChangePasswordModal = ({ isOpen, onClose }) => {
 
         setIsLoading(true);
         try {
-            await api.post('/api/auth/change-password', { new_password: newPassword });
+            await api.post('/api/auth/change-password', {
+                old_password: user?.name, // Use current name as old password for default reset
+                new_password: newPassword
+            });
             setMessage({ type: 'success', text: "Password updated! Logging out..." });
             setTimeout(() => {
-                window.location.reload(); // Simplest way to force re-auth
+                window.location.reload(); // Force re-auth
             }, 2000);
         } catch (err) {
-            setMessage({ type: 'error', text: "Failed to update password" });
+            const errorMsg = err.response?.data?.detail || "Failed to update password";
+            setMessage({ type: 'error', text: errorMsg });
         } finally {
             setIsLoading(false);
         }
