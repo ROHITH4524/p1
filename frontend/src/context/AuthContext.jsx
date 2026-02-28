@@ -4,11 +4,10 @@ import api from '../api/axios';
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null); // stores { id, name, email, role }
+    const [user, setUser] = useState(null); // stores { id, name, email, role, school_id }
     const [token, setToken] = useState(localStorage.getItem('token') || null);
     const [loading, setLoading] = useState(true);
 
-    // When token changes, either fetch user profile or clear it
     useEffect(() => {
         if (token) {
             localStorage.setItem('token', token);
@@ -26,7 +25,6 @@ export const AuthProvider = ({ children }) => {
             setUser(res.data);
         } catch (err) {
             console.error("Failed to fetch user profile", err);
-            // If token is invalid (e.g., 401 Unauthorized), logout automatically
             if (err.response?.status === 401) {
                 logout();
             }
@@ -36,7 +34,6 @@ export const AuthProvider = ({ children }) => {
     };
 
     const login = (jwtToken) => {
-        setLoading(true);
         setToken(jwtToken);
     };
 
@@ -45,8 +42,18 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
     };
 
+    const getDashboardUrl = (role) => {
+        switch (role) {
+            case 'super_admin': return '/super-admin/dashboard';
+            case 'school_admin': return '/school-admin/dashboard';
+            case 'teacher': return '/teacher/dashboard';
+            case 'student': return '/student/dashboard';
+            default: return '/login';
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, token, loading, login, logout, getDashboardUrl }}>
             {children}
         </AuthContext.Provider>
     );

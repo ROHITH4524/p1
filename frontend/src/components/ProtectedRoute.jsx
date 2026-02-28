@@ -2,19 +2,17 @@ import React, { useContext } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 
-const ProtectedRoute = ({ allowedRoles }) => {
-    const { user, token, loading } = useContext(AuthContext);
+const ProtectedRoute = () => {
+    const { token, loading } = useContext(AuthContext);
 
-    if (loading) return <div className="p-10 text-center">Loading...</div>;
+    if (loading) return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        </div>
+    );
 
-    // If no token, redirect to login
     if (!token) {
         return <Navigate to="/login" replace />;
-    }
-
-    // If roles are specified and user's role isn't in them, redirect to their home
-    if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-        return <Navigate to="/" replace />;
     }
 
     return <Outlet />;

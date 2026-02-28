@@ -1,14 +1,10 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
 from database import Base
 
-class Student(Base):
-    __tablename__ = "students"
+class Teacher(Base):
+    __tablename__ = "teachers"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
-    teacher_id = Column(Integer, ForeignKey("teachers.id", ondelete="SET NULL"), nullable=True)
     school_id = Column(Integer, ForeignKey("schools.id", ondelete="CASCADE"), nullable=False)
-    name = Column(String(255), nullable=False)
-    age = Column(Integer)
-    gender = Column(String(50)) # Using string for Male/Female from seed
-    class_name = Column("class", String(20))
+    subject_specialization = Column(String(100))

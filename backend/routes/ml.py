@@ -1,28 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, extract
 from pydantic import BaseModel
-from typing import List
-
+from typing import List, Optional
 from database import get_db
 from models.user import User, RoleEnum
 from models.student import Student
 from models.marks import Marks
-from auth.jwt_handler import get_current_user
+from models.teacher import Teacher
+from models.subject import Subject
+from auth.jwt_handler import get_current_user, check_role
 from ml.predict import predict_grade
 from ml.cluster import cluster_students
 
 router = APIRouter()
 
-# Dependency for Role Checking
-def require_admin_or_teacher(current_user: User = Depends(get_current_user)):
-    if current_user.role not in [RoleEnum.admin, RoleEnum.teacher]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin/Teacher access required"
-        )
-    return current_user
-
+# Schemas
 class PredictRequest(BaseModel):
     mid_term: float
     assignment: float
@@ -31,70 +24,128 @@ class PredictResponse(BaseModel):
     predicted_grade: str
     confidence_percentage: float
 
-# 3. POST /ml/predict-grade API route
+class AtRiskStudent(BaseModel):
+    student_name: str
+    class_name: str
+    total_marks: float
+    teacher_name: str
+
+# 1. POST /ml/predict-grade
 @router.post("/predict-grade", response_model=PredictResponse)
 def predict_student_grade_route(data: PredictRequest, current_user: User = Depends(get_current_user)):
+    check_role(current_user, [RoleEnum.teacher, RoleEnum.student])
     result = predict_grade(data.mid_term, data.assignment)
     if "error" in result:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
     return result
 
-# 4. GET /ml/at-risk
-@router.get("/at-risk")
-def get_at_risk_students(db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_teacher)):
-    # Group by student to get their total across all subjects
-    student_totals = db.query(
-        Student.id,
-        Student.name,
+# 2. GET /ml/at-risk
+@router.get("/at-risk", response_model=List[AtRiskStudent])
+def get_at_risk_students(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_role(current_user, [RoleEnum.school_admin, RoleEnum.teacher])
+    
+    query = db.query(
+        Student.name.label("student_name"),
         Student.class_name,
-        func.sum(Marks.mid_term + Marks.final_term + Marks.assignment).label("total_marks"),
-        func.count(Marks.id).label("subject_count")
+        func.sum(Marks.total).label("total_marks"),
+        User.name.label("teacher_name")
     ).join(Marks, Student.id == Marks.student_id)\
-     .group_by(Student.id).all()
-     
+     .join(Teacher, Student.teacher_id == Teacher.id)\
+     .join(User, Teacher.user_id == User.id)
+
+    # Multi-tenant Isolation
+    query = query.filter(Student.school_id == current_user.school_id)
+
+    if current_user.role == RoleEnum.teacher:
+        teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+        if teacher:
+            query = query.filter(Student.teacher_id == teacher.id)
+
+    student_totals = query.group_by(Student.id).all()
+    
     at_risk = []
     for st in student_totals:
-        if st.subject_count == 0:
-            continue
-            
-        # Max marks per subject is typically 100 (50+30+20 etc.) Let's assume 100 per subject.
-        max_possible = st.subject_count * 100
-        
-        # Flag if total is < 50% of max possible
-        if st.total_marks < (max_possible * 0.5):
+        # At-risk = total marks below 50% of maximum (150 total max as per user request)
+        if float(st.total_marks or 0) < 75: 
             at_risk.append({
-                "student_id": st.id,
-                "name": st.name,
+                "student_name": st.student_name,
                 "class_name": st.class_name,
                 "total_marks": float(st.total_marks),
-                "max_possible": max_possible,
-                "percentage": round((float(st.total_marks) / max_possible) * 100, 2)
+                "teacher_name": st.teacher_name
             })
             
     return at_risk
 
-# 5. GET /ml/clusters
+# 3. GET /ml/clusters
 @router.get("/clusters")
-def get_student_clusters(db: Session = Depends(get_db), current_user: User = Depends(require_admin_or_teacher)):
-    student_totals = db.query(
+def get_student_clusters(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_role(current_user, [RoleEnum.school_admin, RoleEnum.teacher])
+    
+    query = db.query(
         Student.id,
         Student.name,
-        func.sum(Marks.mid_term + Marks.final_term + Marks.assignment).label("total")
+        func.avg(Marks.total).label("avg_marks")
     ).join(Marks, Student.id == Marks.student_id)\
-     .group_by(Student.id).all()
-     
-    data = []
-    for st in student_totals:
-        if st.total is not None:
-             data.append({
-                 "id": st.id,
-                 "name": st.name,
-                 "total": float(st.total)
-             })
-             
-    if not data:
+     .filter(Student.school_id == current_user.school_id)
+
+    if current_user.role == RoleEnum.teacher:
+        teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+        if teacher:
+            query = query.filter(Student.teacher_id == teacher.id)
+
+    results = query.group_by(Student.id).all()
+    
+    if not results:
         return []
-        
+
+    # Map to High/Medium/Low by avg marks using KMeans in cluster_students
+    data = [{"id": r.id, "name": r.name, "total": float(r.avg_marks or 0)} for r in results]
     clusters = cluster_students(data)
     return clusters
+
+# 4. GET /ml/school-insights
+@router.get("/school-insights")
+def get_school_insights(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    check_role(current_user, [RoleEnum.school_admin])
+    
+    school_id = current_user.school_id
+    
+    # Lowest Average Subject
+    lowest_sub = db.query(
+        Subject.name,
+        func.avg(Marks.total).label("avg_score")
+    ).join(Marks, Subject.id == Marks.subject_id)\
+     .filter(Subject.school_id == school_id)\
+     .group_by(Subject.id).order_by("avg_score").first()
+
+    # Teacher whose students perform best
+    best_teacher = db.query(
+        User.name,
+        func.avg(Marks.total).label("avg_score")
+    ).join(Teacher, User.id == Teacher.user_id)\
+     .join(Student, Teacher.id == Student.teacher_id)\
+     .join(Marks, Student.id == Marks.student_id)\
+     .filter(Teacher.school_id == school_id)\
+     .group_by(Teacher.id).order_by(func.avg(Marks.total).desc()).first()
+
+    # Month-wise performance trend
+    trend = db.query(
+        extract('month', Marks.created_at).label("month"),
+        func.avg(Marks.total).label("avg_score")
+    ).filter(Marks.school_id == school_id)\
+     .group_by("month").all()
+    
+    # Grade distribution pie chart data
+    grade_dist = db.query(
+        Marks.grade,
+        func.count(Marks.id).label("count")
+    ).filter(Marks.school_id == school_id)\
+     .group_by(Marks.grade).all()
+
+    return {
+        "lowest_subject": lowest_sub.name if lowest_sub else "N/A",
+        "best_teacher": best_teacher.name if best_teacher else "N/A",
+        "performance_trend": [{"month": int(t.month), "score": float(t.avg_score or 0)} for t in trend if t.month is not None],
+        "grade_distribution": [{"grade": g.grade, "count": g.count} for g in grade_dist]
+    }
 

@@ -50,11 +50,26 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if payload is None:
         raise credentials_exception
     
-    user_id: int = payload.get("sub")
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    school_id = payload.get("school_id")
+    
     if user_id is None:
         raise credentials_exception
         
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+        
     return user
+
+def check_role(user: User, allowed_roles: list):
+    if user.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have enough permissions to perform this action"
+        )
+    return True
