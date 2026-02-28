@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, ForeignKey, FetchedValue, DateTime, func
+from sqlalchemy import Column, Integer, String, DECIMAL, ForeignKey, DateTime, func
 from database import Base
 
 class Marks(Base):
@@ -11,6 +11,6 @@ class Marks(Base):
     mid_term = Column(DECIMAL(5, 2), default=0)
     final_term = Column(DECIMAL(5, 2), default=0)
     assignment = Column(DECIMAL(5, 2), default=0)
-    total = Column(DECIMAL(5, 2), server_default=FetchedValue()) 
+    total = Column(DECIMAL(5, 2), default=0)
     grade = Column(String(2))
     created_at = Column(DateTime, server_default=func.now())

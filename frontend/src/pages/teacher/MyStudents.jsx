@@ -28,7 +28,11 @@ const MyStudents = () => {
     const handleAddStudent = async (e) => {
         e.preventDefault();
         try {
-            const res = await api.post('/api/teacher/add-student', newStudent);
+            const payload = {
+                ...newStudent,
+                class_name: newStudent.class
+            };
+            const res = await api.post('/api/teacher/add-student', payload);
             setShowCredentials(res.data);
             setIsModalOpen(false);
             setNewStudent({ name: '', age: '', gender: 'Male', class: '' });
@@ -117,15 +121,15 @@ const MyStudents = () => {
                                 <td className="px-8 py-5 text-center font-black text-blue-900">{s.total_marks}/150</td>
                                 <td className="px-8 py-5 text-center">
                                     <span className={`px-3 py-1 rounded-lg text-xs font-black ${s.grade.startsWith('A') ? 'bg-emerald-100 text-emerald-700' :
-                                            s.grade === 'B' ? 'bg-blue-100 text-blue-700' :
-                                                s.grade === 'C' ? 'bg-yellow-100 text-yellow-700' :
-                                                    'bg-red-100 text-red-700'
+                                        s.grade === 'B' ? 'bg-blue-100 text-blue-700' :
+                                            s.grade === 'C' ? 'bg-yellow-100 text-yellow-700' :
+                                                'bg-red-100 text-red-700'
                                         }`}>{s.grade}</span>
                                 </td>
                                 <td className="px-8 py-5 text-right">
                                     <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${s.performance_tier === 'High' ? 'bg-emerald-500 text-white' :
-                                            s.performance_tier === 'Medium' ? 'bg-indigo-500 text-white' :
-                                                'bg-orange-500 text-white'
+                                        s.performance_tier === 'Medium' ? 'bg-indigo-500 text-white' :
+                                            'bg-orange-500 text-white'
                                         }`}>{s.performance_tier}</span>
                                 </td>
                             </tr>

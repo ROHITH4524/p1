@@ -66,7 +66,7 @@ def add_marks(mark_data: MarkAddRequest, db: Session = Depends(get_db), current_
     if not subject:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subject not found in your school")
 
-    total = mark_data.mid_term + mark_data.final_term + mark_data.assignment
+    total = round(mark_data.mid_term + mark_data.final_term + mark_data.assignment, 2)
     grade = calculate_grade(total)
     
     new_mark = Marks(
@@ -76,6 +76,7 @@ def add_marks(mark_data: MarkAddRequest, db: Session = Depends(get_db), current_
         mid_term=mark_data.mid_term,
         final_term=mark_data.final_term,
         assignment=mark_data.assignment,
+        total=total,
         grade=grade
     )
     db.add(new_mark)

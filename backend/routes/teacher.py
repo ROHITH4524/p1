@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
+from typing import List
 import csv
 import io
 from database import get_db
@@ -27,6 +28,9 @@ class MarkAddRequest(BaseModel):
     mid_term: float
     final_term: float
     assignment: float
+
+class BulkMarkAddRequest(BaseModel):
+    marks: List[MarkAddRequest]
 
 def calculate_grade(total):
     if total >= 90: return "A+"
@@ -197,29 +201,47 @@ def delete_student(student_id: int, current_user: User = Depends(get_current_use
     return {"message": "Student and associated user account removed successfully"}
 
 @router.post("/add-marks")
-def add_marks(data: MarkAddRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def add_marks(data: BulkMarkAddRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     check_role(current_user, [RoleEnum.teacher])
     teacher = db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Teacher record not found")
     
-    student = db.query(Student).filter(Student.id == data.student_id, Student.teacher_id == teacher.id).first()
-    if not student:
-        raise HTTPException(status_code=404, detail="Student not found or not assigned to you")
-    
-    total = data.mid_term + data.final_term + data.assignment
-    grade = calculate_grade(total)
-    
-    new_mark = Marks(
-        student_id=data.student_id,
-        subject_id=data.subject_id,
-        school_id=current_user.school_id,
-        mid_term=data.mid_term,
-        final_term=data.final_term,
-        assignment=data.assignment,
-        grade=grade
-    )
-    db.add(new_mark)
+    for mark_item in data.marks:
+        student = db.query(Student).filter(Student.id == mark_item.student_id, Student.teacher_id == teacher.id).first()
+        if not student:
+            continue
+        
+        total = round(mark_item.mid_term + mark_item.final_term + mark_item.assignment, 2)
+        grade = calculate_grade(total)
+        
+        # Upsert: update existing or insert new
+        existing_mark = db.query(Marks).filter(
+            Marks.student_id == mark_item.student_id,
+            Marks.subject_id == mark_item.subject_id
+        ).first()
+        
+        if existing_mark:
+            existing_mark.mid_term = mark_item.mid_term
+            existing_mark.final_term = mark_item.final_term
+            existing_mark.assignment = mark_item.assignment
+            existing_mark.total = total
+            existing_mark.grade = grade
+        else:
+            new_mark = Marks(
+                student_id=mark_item.student_id,
+                subject_id=mark_item.subject_id,
+                school_id=current_user.school_id,
+                mid_term=mark_item.mid_term,
+                final_term=mark_item.final_term,
+                assignment=mark_item.assignment,
+                total=total,
+                grade=grade
+            )
+            db.add(new_mark)
+            
     db.commit()
-    return {"message": "Marks added successfully", "grade": grade}
+    return {"message": "Marks processed successfully"}
 
 @router.get("/my-report")
 def get_teacher_report(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

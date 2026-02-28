@@ -66,7 +66,7 @@ const StudentDashboard = () => {
             {/* Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {[
-                    { label: "Overall Average", val: `${dashboard.average_total_marks.toFixed(1)}/150`, icon: "🎯", color: "blue" },
+                    { label: "Overall Average", val: `${dashboard.average_marks.toFixed(1)}/150`, icon: "🎯", color: "blue" },
                     { label: "Best Subject", val: dashboard.best_subject, icon: "🔥", color: "emerald" },
                     { label: "Weakest Area", val: dashboard.weakest_subject, icon: "💡", color: "orange" },
                     { label: "Overall Grade", val: dashboard.overall_grade, icon: "⭐", color: "indigo" }
